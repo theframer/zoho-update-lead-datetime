@@ -1,0 +1,70 @@
+// Zoho Deluge script to update a Lead record with the current datetime in AEST
+// It fetches time from an external API, adjusts for DST, and updates a custom field.
+
+try 
+{
+    // Get the Lead ID from workflow context or argument
+    leadId = lead.get("id");
+
+    // Set timezone to Australia/Sydney
+    timezone = "Australia/Sydney";
+
+    // 1. Call external Time API to get current time in that timezone
+    timeResp = invokeurl
+    [
+        url :"https://timeapi.io/api/Time/current/zone?timeZone=" + timezone
+        type :GET
+    ];
+
+    // 2. Check if we got a valid datetime
+    if(timeResp.get("dateTime") != null)
+    {
+        // Remove microseconds (e.g. convert 2025-07-02T10:40:44.4432617 to 2025-07-02T10:40:44)
+        rawDateTimeStr = timeResp.get("dateTime");
+        trimmedDateTimeStr = rawDateTimeStr.getPrefix(".");
+
+        // 3. Decide UTC offset based on DST flag
+        if(timeResp.get("dstActive") == true)
+        {
+            offset = "+11:00";
+        }
+        else
+        {
+            offset = "+10:00";
+        }
+
+        // Build final datetime string with offset
+        formattedDateTime = trimmedDateTimeStr + offset;
+
+        // 4. Prepare payload to update Lead
+        dealMap = Map();
+        dealMap.put("Scheduler_Date_Time", formattedDateTime);
+
+        dataList = List();
+        dataList.add(dealMap);
+
+        payload = Map();
+        payload.put("data", dataList);
+
+        // 5. Update Lead record via Zoho CRM API (using connection `solution`)
+        response = invokeapi
+        [
+            service : solution
+            path : "/crm/v7/Leads/" + leadId
+            type : PUT
+            body : payload.toString()
+            headers : {"content-type":"application/json"}
+        ];
+
+        info "Lead updated successfully";
+        info response;
+    }
+    else
+    {
+        info "Failed to fetch datetime from TimeAPI";
+    }
+}
+catch (e)
+{
+    info "Error occurred: " + e.toString();
+}
